@@ -1,0 +1,8 @@
+{
+  "name": "Agribot",
+  "description": "A real-time, multilingual agriculture advisor for farmers, powered by the Gemini Live API. It provides location- and crop-specific guidance through a conversational voice interface.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
