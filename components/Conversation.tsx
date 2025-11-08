@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Turn, Role } from '../types';
 import LeafIcon from './icons/LeafIcon';
 import WeatherCard from './WeatherCard';
+import CropPricesCard from './CropPricesCard';
 
 const UserIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
@@ -34,6 +35,7 @@ const Conversation: React.FC<ConversationProps> = ({ conversation }) => {
               </div>
             )}
             {turn.weather && <WeatherCard data={turn.weather} />}
+            {turn.cropPrices && <CropPricesCard data={turn.cropPrices} />}
           </>
         </div>
       ))}

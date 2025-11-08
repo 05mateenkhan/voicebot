@@ -22,9 +22,22 @@ export interface WeatherData {
   }[];
 }
 
+export interface CropPrice {
+  marketName: string;
+  price: string;
+  grade: string;
+}
+
+export interface CropPricesData {
+  crop: string;
+  district: string;
+  prices: CropPrice[];
+}
+
 export interface Turn {
   role: Role;
   text?: string;
   weather?: WeatherData;
+  cropPrices?: CropPricesData;
   isFinal?: boolean;
 }

@@ -1,9 +1,11 @@
+
 import { useState, useRef, useCallback } from 'react';
-import { GoogleGenAI, LiveSession, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
-import { ConnectionState, Turn, Role, WeatherData } from '../types';
+// Fix: The `LiveSession` type is not exported from `@google/genai`.
+import { GoogleGenAI, LiveServerMessage, Modality, FunctionDeclaration, Type } from '@google/genai';
+import { ConnectionState, Turn, Role, WeatherData, CropPricesData } from '../types';
 import { createPcmBlob, decode, decodeAudioData } from '../utils/audio';
 
-const SYSTEM_INSTRUCTION = "You are Agribot, a friendly and knowledgeable AI assistant for farmers. Provide concise, actionable advice on crop management, pest control, and soil health. Use simple language. Keep your answers brief. When asked for the weather, use the `getWeatherForecast` function.";
+const SYSTEM_INSTRUCTION = "You are Agribot, a friendly and knowledgeable AI assistant for farmers. Provide concise, actionable advice on crop management, pest control, and soil health. Use simple language. Keep your answers brief. When asked for the weather, use the `getWeatherForecast` function. When asked for crop market prices, use the `getCropPrices` function with the crop name and district.";
 
 const getWeatherForecastDeclaration: FunctionDeclaration = {
   name: 'getWeatherForecast',
@@ -17,6 +19,25 @@ const getWeatherForecastDeclaration: FunctionDeclaration = {
       },
     },
     required: [],
+  },
+};
+
+const getCropPricesDeclaration: FunctionDeclaration = {
+  name: 'getCropPrices',
+  parameters: {
+    type: Type.OBJECT,
+    description: 'Get the market prices for a specific crop in a given district.',
+    properties: {
+      crop: {
+        type: Type.STRING,
+        description: 'The name of the crop. e.g. "Tomatoes".',
+      },
+      district: {
+        type: Type.STRING,
+        description: 'The district to get the prices for. e.g. "Nashik".',
+      },
+    },
+    required: ['crop', 'district'],
   },
 };
 
@@ -35,13 +56,29 @@ const mockGetWeatherForecast = async (location?: string): Promise<WeatherData> =
     };
 };
 
+const mockGetCropPrices = async (crop: string, district: string): Promise<CropPricesData> => {
+    console.log(`Getting prices for ${crop} in ${district}`);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    // Sample data
+    return {
+        crop,
+        district,
+        prices: [
+            { marketName: `${district} Main Market`, price: '₹2,500/quintal', grade: 'A' },
+            { marketName: 'Green Valley Mandi', price: '₹2,350/quintal', grade: 'A' },
+            { marketName: 'Farmers\' Co-op', price: '₹2,100/quintal', grade: 'B' },
+        ],
+    };
+};
+
 
 export const useAgribot = () => {
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.IDLE);
   const [conversation, setConversation] = useState<Turn[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const sessionPromiseRef = useRef<Promise<LiveSession> | null>(null);
+  // Fix: Use `any` for the session promise, as `LiveSession` is not an exported type.
+  const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const inputAudioContextRef = useRef<AudioContext | null>(null);
   const outputAudioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -145,7 +182,7 @@ export const useAgribot = () => {
           systemInstruction: SYSTEM_INSTRUCTION,
           inputAudioTranscription: {},
           outputAudioTranscription: {},
-          tools: [{ functionDeclarations: [getWeatherForecastDeclaration] }],
+          tools: [{ functionDeclarations: [getWeatherForecastDeclaration, getCropPricesDeclaration] }],
         },
         callbacks: {
           onopen: () => {
@@ -195,6 +232,30 @@ export const useAgribot = () => {
                                 }
                             });
                         });
+                    } else if (fc.name === 'getCropPrices') {
+                        const { crop, district } = fc.args;
+                        const cropPricesData = await mockGetCropPrices(crop as string, district as string);
+                        
+                        setConversation(prev => {
+                            const last = prev[prev.length - 1];
+                            let newTurns = [...prev];
+                            if (last?.role === Role.USER && !last.isFinal) {
+                                newTurns = [...prev.slice(0, -1), { ...last, isFinal: true }];
+                                currentInputTranscriptionRef.current = '';
+                            }
+                            newTurns.push({ role: Role.MODEL, cropPrices: cropPricesData, isFinal: true });
+                            return newTurns;
+                        });
+            
+                        sessionPromiseRef.current?.then((session) => {
+                            session.sendToolResponse({
+                                functionResponses: {
+                                    id : fc.id,
+                                    name: fc.name,
+                                    response: { result: JSON.stringify(cropPricesData) },
+                                }
+                            });
+                        });
                     }
                 }
             } else if (message.serverContent?.inputTranscription) {
@@ -220,8 +281,8 @@ export const useAgribot = () => {
                     if (last?.role === Role.MODEL && !last.isFinal) {
                         return [...prev.slice(0, -1), { ...last, text: currentOutputTranscriptionRef.current }];
                     }
-                    // This handles the case where a weather card was just added
-                    if (last?.role === Role.MODEL && last.weather) {
+                    // This handles the case where a weather or price card was just added
+                    if (last?.role === Role.MODEL && (last.weather || last.cropPrices)) {
                         return [...prev, { role: Role.MODEL, text: currentOutputTranscriptionRef.current, isFinal: false }];
                     }
                     return [...prev, { role: Role.MODEL, text: currentOutputTranscriptionRef.current, isFinal: false }];
